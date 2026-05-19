@@ -740,6 +740,17 @@ func notifyMayorSlotOpen(workDir, rigName, polecatName, exitType string) {
 	if townRoot == "" {
 		return
 	}
+	decision := slotOpenDecision(workDir, townRoot, rigName, polecatName, exitType)
+	if !decision.Reusable {
+		_, _ = channelevents.EmitToTown(townRoot, "mayor", "SLOT_BLOCKED", []string{
+			"source=witness",
+			"rig=" + rigName,
+			"polecat=" + polecatName,
+			"exit=" + exitType,
+			"reason=" + decision.Reason,
+		})
+		return
+	}
 
 	// Emit SLOT_OPEN channel event so Mayor's await-event unblocks instantly.
 	_, _ = channelevents.EmitToTown(townRoot, "mayor", "SLOT_OPEN", []string{
@@ -766,6 +777,46 @@ func notifyMayorSlotOpen(workDir, rigName, polecatName, exitType string) {
 	cmd := exec.Command("gt", "mail", "send", "mayor/", "-s", subject, "-m", body)
 	cmd.Dir = townRoot
 	_ = cmd.Run()
+}
+
+func slotOpenDecision(workDir, townRoot, rigName, polecatName, exitType string) polecat.SlotReuseDecision {
+	if exitType != string(ExitTypeCompleted) {
+		return polecat.SlotReuseDecision{Reason: "exit-" + strings.ToLower(exitType)}
+	}
+	prefix := beads.GetPrefixForRig(townRoot, rigName)
+	agentID := beads.PolecatBeadIDWithPrefix(prefix, rigName, polecatName)
+	_, fields, err := beads.New(beads.ResolveBeadsDir(workDir)).ForAgentBead().GetAgentBead(agentID)
+	input := polecat.SlotReuseInput{State: polecat.StateIdle, CleanupStatus: polecat.CleanupUnknown, GitCheckFailed: err != nil || fields == nil}
+	if fields != nil {
+		input.HookBead = fields.HookBead
+		input.PushFailed = fields.PushFailed
+		input.MRFailed = fields.MRFailed
+		if fields.CleanupStatus != "" {
+			input.CleanupStatus = polecat.CleanupStatus(fields.CleanupStatus)
+		}
+	}
+	clonePath := filepath.Join(townRoot, rigName, "polecats", polecatName, rigName)
+	g := git.NewGit(clonePath)
+	if branch, err := g.CurrentBranch(); err == nil {
+		input.Branch = branch
+		if status, err := g.CheckUncommittedWork(); err == nil {
+			input.GitDirty = !status.CleanExcludingRuntime()
+			input.StashCount = status.StashCount
+			input.UnpushedCommits = status.UnpushedCommits
+		} else {
+			input.GitCheckFailed = true
+		}
+		if pushed, unpushed, err := g.BranchPushedToRemote(branch, "origin"); err == nil {
+			if !pushed && unpushed > input.UnpushedCommits {
+				input.UnpushedCommits = unpushed
+			}
+		} else {
+			input.GitCheckFailed = true
+		}
+	} else {
+		input.GitCheckFailed = true
+	}
+	return polecat.DecideSlotReuse(input)
 }
 
 // RecoveryPayload contains data for RECOVERY_NEEDED escalation.
@@ -2203,8 +2254,9 @@ func clearCompletionMetadata(bd *BdCli, workDir, agentBeadID string) error {
 	// Clear completion metadata fields
 	fields.ExitType = ""
 	fields.MRID = ""
-	fields.Branch = ""
-	fields.MRFailed = false
+	if !fields.MRFailed && !fields.PushFailed {
+		fields.Branch = ""
+	}
 	fields.CompletionTime = ""
 
 	newDesc := beads.FormatAgentDescription(issues[0].Title, fields)

@@ -1372,13 +1372,6 @@ notifyWitness:
 		}
 	}
 
-	// Nudge witness via tmux (observability, not critical path).
-	// Self-managed completion (gt-1qlg): witness no longer processes routine completions.
-	// The nudge is kept for observability — witness logs the event but doesn't
-	// need to act on it. Nudges are free (no Dolt commit).
-	nudgeWitness(rigName, fmt.Sprintf("POLECAT_DONE %s exit=%s", polecatName, exitType))
-	fmt.Printf("%s Witness notified of %s (via nudge)\n", style.Bold.Render("✓"), exitType)
-
 	// Write witness notification checkpoint for resume (gt-aufru)
 	if agentBeadID != "" {
 		// Agent bead lives in town DB despite rig prefix — bypass routing.
@@ -1396,6 +1389,12 @@ notifyWitness:
 
 	// Update agent bead state (ZFC: self-report completion)
 	updateAgentStateOnDone(cwd, townRoot, exitType, issueID)
+
+	// Nudge witness only after hook/cleanup state is updated. Otherwise witness can
+	// evaluate slot availability against stale hook_bead or cleanup_status and emit
+	// false SLOT_BLOCKED/SLOT_OPEN signals.
+	nudgeWitness(rigName, fmt.Sprintf("POLECAT_DONE %s exit=%s", polecatName, exitType))
+	fmt.Printf("%s Witness notified of %s (via nudge)\n", style.Bold.Render("✓"), exitType)
 
 	// Persistent polecat model (gt-hdf8): polecats transition to IDLE after completion.
 	// Session stays alive, sandbox preserved, worktree synced to main for reuse.
@@ -1427,7 +1426,7 @@ notifyWitness:
 				fmt.Printf("  Files: %s\n", ws.String())
 			}
 		}
-		if cwdAvailable && !pushFailed && syncSafe {
+		if cwdAvailable && !pushFailed && !mrFailed && syncSafe {
 			// Remember the old branch so we can delete it after switching
 			oldBranch := branch
 
