@@ -243,7 +243,6 @@ func TestPatrolFormulasUseDynamicBeadResolution(t *testing.T) {
 				t.Fatalf("%s: loop step not found or has empty description", name)
 			}
 
-
 			// Must use dynamic resolution through the agent resolver. The older
 			// bd-list query only sees one table in one DB and misses wisp-backed
 			// or town-stranded agent beads.
@@ -253,9 +252,7 @@ func TestPatrolFormulasUseDynamicBeadResolution(t *testing.T) {
 					"See hq-9xs.",
 					name)
 			}
-			if !strings.Contains(loopDesc, `--agent-bead "$YOUR_AGENT_BEAD"`) &&
-				!strings.Contains(loopDesc, `--agent-bead "$YOUR_AGENT_BEAD"`) &&
-				!strings.Contains(loopDesc, `--agent-bead "$YOUR_AGENT_BEAD"`) {
+			if !strings.Contains(loopDesc, `--agent-bead "$YOUR_AGENT_BEAD"`) {
 				t.Errorf("%s loop step must pass the resolved agent bead to await", name)
 			}
 			if !strings.Contains(loopDesc, `gt agent state "$YOUR_AGENT_BEAD" --set idle=0`) {
