@@ -198,17 +198,18 @@ case "$cmd" in
   cook)
     exit 0
     ;;
-  mol)
-    sub="$1"
-    shift || true
-    case "$sub" in
-      wisp)
-        echo '{"new_epic_id":"gt-wisp-xyz"}'
-        ;;
-      bond)
-        echo '{"root_id":"gt-wisp-xyz"}'
-        ;;
-    esac
+	  mol)
+		sub="$1"
+		shift || true
+		case "$sub" in
+		  wisp)
+			echo 'legacy mol wisp should not be called' >&2
+			exit 1
+			;;
+		  bond)
+			echo '{"result_id":"gt-abc123","id_mapping":{"mol-polecat-work":"gt-wisp-xyz"}}'
+			;;
+		esac
     ;;
   update)
     exit 0
@@ -340,9 +341,7 @@ exit /b 0
 		wantBeadsDir = resolved
 	}
 	gotPolecatCook := false
-	gotPolecatWisp := false
 	gotReviewCook := false
-	gotReviewWisp := false
 	gotBondCount := 0
 	gotCreate := false
 	gotTargetDBCheck := false
@@ -390,6 +389,8 @@ exit /b 0
 		case strings.Contains(args, "show "+newBeadID) && strings.Contains(args, "--json"):
 			gotTargetDBCheck = true
 			assertTargetRig("target DB check", dir, beadsDir, database, beadsDB, bdDB, dataDir, args)
+		case strings.Contains(args, "sql SELECT DISTINCT wisp_dependencies.issue_id"):
+			assertTargetRig("molecule dep check", dir, beadsDir, database, beadsDB, bdDB, dataDir, args)
 		case strings.Contains(args, "cook "):
 			switch {
 			case strings.Contains(args, "mol-polecat-work"):
@@ -400,18 +401,11 @@ exit /b 0
 				t.Fatalf("bd cook args = %q, want expected formula", args)
 			}
 			assertTargetRig("cook", dir, beadsDir, database, beadsDB, bdDB, dataDir, args)
-		case strings.Contains(args, "mol wisp "):
-			switch {
-			case strings.Contains(args, "mol-polecat-work"):
-				gotPolecatWisp = true
-			case strings.Contains(args, "mol-review"):
-				gotReviewWisp = true
-			default:
-				t.Fatalf("bd mol wisp args = %q, want expected formula", args)
-			}
-			assertTargetRig("mol wisp", dir, beadsDir, database, beadsDB, bdDB, dataDir, args)
 		case strings.Contains(args, "mol bond "):
 			gotBondCount++
+			if !strings.Contains(args, "--ephemeral") {
+				t.Fatalf("bd mol bond args = %q, want --ephemeral", args)
+			}
 			assertTargetRig("mol bond", dir, beadsDir, database, beadsDB, bdDB, dataDir, args)
 		case strings.Contains(args, "update "+newBeadID) && strings.Contains(args, "--status=hooked"):
 			gotHook = true
@@ -429,9 +423,9 @@ exit /b 0
 		}
 	}
 
-	if !gotCreate || !gotTargetDBCheck || !gotPolecatCook || !gotPolecatWisp || !gotReviewCook || !gotReviewWisp || gotBondCount < 2 || !gotHook || !gotMetadata {
-		t.Fatalf("missing expected bd commands: create=%v targetDBCheck=%v polecat(cook=%v wisp=%v) review(cook=%v wisp=%v) bondCount=%d hook=%v metadata=%v (log: %q)",
-			gotCreate, gotTargetDBCheck, gotPolecatCook, gotPolecatWisp, gotReviewCook, gotReviewWisp, gotBondCount, gotHook, gotMetadata, string(logBytes))
+	if !gotCreate || !gotTargetDBCheck || !gotPolecatCook || !gotReviewCook || gotBondCount < 2 || !gotHook || !gotMetadata {
+		t.Fatalf("missing expected bd commands: create=%v targetDBCheck=%v polecatCook=%v reviewCook=%v bondCount=%d hook=%v metadata=%v (log: %q)",
+			gotCreate, gotTargetDBCheck, gotPolecatCook, gotReviewCook, gotBondCount, gotHook, gotMetadata, string(logBytes))
 	}
 }
 
@@ -1785,7 +1779,7 @@ exit /b 0
 
 // TestSlingFormulaOnBeadPassesFeatureAndIssueVars verifies that when using
 // gt sling <formula> --on <bead>, both --var feature=<title> and --var issue=<beadID>
-// are passed to the bd mol wisp command.
+// are passed to the canonical bd mol bond command.
 func TestSlingFormulaOnBeadPassesFeatureAndIssueVars(t *testing.T) {
 	townRoot := t.TempDir()
 
@@ -1811,7 +1805,7 @@ func TestSlingFormulaOnBeadPassesFeatureAndIssueVars(t *testing.T) {
 		t.Fatalf("write routes.jsonl: %v", err)
 	}
 
-	// Stub bd so we can observe the arguments passed to mol wisp.
+	// Stub bd so we can observe the arguments passed to mol bond.
 	binDir := filepath.Join(townRoot, "bin")
 	if err := os.MkdirAll(binDir, 0755); err != nil {
 		t.Fatalf("mkdir binDir: %v", err)
@@ -1835,17 +1829,18 @@ case "$cmd" in
   cook)
     exit 0
     ;;
-  mol)
-    sub="$1"
-    shift || true
-    case "$sub" in
-      wisp)
-        echo '{"new_epic_id":"gt-wisp-xyz"}'
-        ;;
-      bond)
-        echo '{"root_id":"gt-wisp-xyz"}'
-        ;;
-    esac
+	  mol)
+		sub="$1"
+		shift || true
+		case "$sub" in
+		  wisp)
+			echo 'legacy mol wisp should not be called' >&2
+			exit 1
+			;;
+		  bond)
+			echo '{"result_id":"gt-abc123","id_mapping":{"mol-review":"gt-wisp-xyz"}}'
+			;;
+		esac
     ;;
 esac
 exit 0
@@ -1866,11 +1861,11 @@ if "%cmd%"=="formula" (
 if "%cmd%"=="cook" exit /b 0
 if "%cmd%"=="mol" (
   if "%sub%"=="wisp" (
-    echo {^"new_epic_id^":^"gt-wisp-xyz^"}
-    exit /b 0
+    echo legacy mol wisp should not be called 1>&2
+    exit /b 1
   )
   if "%sub%"=="bond" (
-    echo {^"root_id^":^"gt-wisp-xyz^"}
+    echo {^"result_id^":^"gt-abc123^",^"id_mapping^":{^"mol-review^":^"gt-wisp-xyz^"}}
     exit /b 0
   )
 )
@@ -1926,28 +1921,28 @@ exit /b 0
 		t.Fatalf("read bd log: %v", err)
 	}
 
-	// Find the mol wisp command and verify both --var arguments
+	// Find the mol bond command and verify both --var arguments
 	logLines := strings.Split(string(logBytes), "\n")
-	var wispLine string
+	var bondLine string
 	for _, line := range logLines {
-		if strings.Contains(line, "mol wisp") {
-			wispLine = line
+		if strings.Contains(line, "mol bond") {
+			bondLine = line
 			break
 		}
 	}
 
-	if wispLine == "" {
-		t.Fatalf("mol wisp command not found in log: %s", string(logBytes))
+	if bondLine == "" {
+		t.Fatalf("mol bond command not found in log: %s", string(logBytes))
 	}
 
 	// Verify --var feature=<title> is present
-	if !containsVarArg(wispLine, "feature", "My Test Feature") {
-		t.Errorf("mol wisp missing --var feature=<title>\ngot: %s", wispLine)
+	if !containsVarArg(bondLine, "feature", "My Test Feature") {
+		t.Errorf("mol bond missing --var feature=<title>\ngot: %s", bondLine)
 	}
 
 	// Verify --var issue=<beadID> is present
-	if !containsVarArg(wispLine, "issue", "gt-abc123") {
-		t.Errorf("mol wisp missing --var issue=<beadID>\ngot: %s", wispLine)
+	if !containsVarArg(bondLine, "issue", "gt-abc123") {
+		t.Errorf("mol bond missing --var issue=<beadID>\ngot: %s", bondLine)
 	}
 }
 
@@ -2332,10 +2327,11 @@ case "$cmd" in
     shift || true
     case "$sub" in
       wisp)
-        echo '{"new_epic_id":"gt-wisp-xyz"}'
+        echo 'legacy mol wisp should not be called' >&2
+        exit 1
         ;;
       bond)
-        echo '{"root_id":"gt-wisp-xyz"}'
+        echo '{"result_id":"gt-abc123","id_mapping":{"mol-polecat-work":"gt-wisp-xyz"}}'
         ;;
     esac
     ;;
@@ -2362,11 +2358,11 @@ if "%cmd%"=="formula" (
 if "%cmd%"=="cook" exit /b 0
 if "%cmd%"=="mol" (
   if "%sub%"=="wisp" (
-    echo {^"new_epic_id^":^"gt-wisp-xyz^"}
-    exit /b 0
+    echo legacy mol wisp should not be called 1>&2
+    exit /b 1
   )
   if "%sub%"=="bond" (
-    echo {^"root_id^":^"gt-wisp-xyz^"}
+    echo {^"result_id^":^"gt-abc123^",^"id_mapping^":{^"mol-polecat-work^":^"gt-wisp-xyz^"}}
     exit /b 0
   )
 )
@@ -2473,6 +2469,9 @@ exit /b 0
 	attachment := beads.ParseAttachmentFields(&beads.Issue{Description: string(descBytes)})
 	if attachment == nil {
 		t.Fatalf("parse attached fields returned nil:\n%s", string(descBytes))
+	}
+	if attachment.AttachedMolecule != "gt-wisp-xyz" {
+		t.Fatalf("attached_molecule = %q, want gt-wisp-xyz\nDescription:\n%s", attachment.AttachedMolecule, string(descBytes))
 	}
 	vars := map[string]string{}
 	for _, kv := range attachmentFormulaVars(attachment) {
