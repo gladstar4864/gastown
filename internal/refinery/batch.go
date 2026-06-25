@@ -213,6 +213,9 @@ func (e *Engineer) ProcessBatch(ctx context.Context, batch []*MRInfo, target str
 	}
 
 	_, _ = fmt.Fprintf(e.output, "[Batch] Processing batch of %d MRs targeting %s\n", len(batch), target)
+	if !e.recheckBatchEligibility(batch, target, result) {
+		return result
+	}
 
 	// Step 1: Build the stack
 	stacked, conflicts, err := e.BuildRebaseStack(ctx, batch, target)
@@ -285,6 +288,21 @@ func (e *Engineer) ProcessBatch(ctx context.Context, batch []*MRInfo, target str
 	}
 
 	return result
+}
+
+func (e *Engineer) recheckBatchEligibility(batch []*MRInfo, target string, result *BatchResult) bool {
+	for _, mr := range batch {
+		if eligibility := e.recheckMRStillMergeable(mr, target); !eligibility.Success {
+			if eligibility.NoMerge {
+				_, _ = fmt.Fprintf(e.output, "[Batch] MR %s is not merge-eligible: %s\n", mr.ID, eligibility.Error)
+				e.HandleMRInfoFailure(mr, eligibility)
+			} else {
+				result.Error = fmt.Errorf("pre-batch eligibility recheck failed for %s: %s", mr.ID, eligibility.Error)
+			}
+			return false
+		}
+	}
+	return true
 }
 
 // processSingleMR handles the degenerate case of a batch with one MR.

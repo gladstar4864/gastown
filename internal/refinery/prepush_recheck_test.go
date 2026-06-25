@@ -416,6 +416,41 @@ func TestProcessBatch_RechecksBatchBeforePush(t *testing.T) {
 	}
 }
 
+func TestProcessBatch_RechecksBatchBeforeGates(t *testing.T) {
+	workDir, _, cleanup := testGitRepo(t)
+	defer cleanup()
+	createFeatureBranch(t, workDir, "feature-a", "a.txt", "a\n")
+	createFeatureBranch(t, workDir, "feature-b", "b.txt", "b\n")
+	store := newPrepushStore(
+		prepushIssue("gt-src-a", ""),
+		prepushIssue("gt-src-b", "no_merge: true"),
+		prepushMRIssue("gt-mr-a", "feature-a", "main", "gt-src-a"),
+		prepushMRIssue("gt-mr-b", "feature-b", "main", "gt-src-b"),
+	)
+	e := newPrepushEngineer(t, workDir, store)
+	e.config.Gates = map[string]*GateConfig{"fail": {Cmd: "false"}}
+	before := run(t, workDir, "git", "rev-parse", "origin/main")
+
+	batch := []*MRInfo{
+		{ID: "gt-mr-a", Branch: "feature-a", Target: "main", SourceIssue: "gt-src-a"},
+		{ID: "gt-mr-b", Branch: "feature-b", Target: "main", SourceIssue: "gt-src-b"},
+	}
+	result := e.ProcessBatch(context.Background(), batch, "main", DefaultBatchConfig())
+	if result.Error != nil {
+		t.Fatalf("expected clean policy dequeue, got error: %v", result.Error)
+	}
+	if len(result.Culprits) != 0 {
+		t.Fatalf("expected no gate culprits for policy-ineligible MR, got %d", len(result.Culprits))
+	}
+	assertOriginMainUnchangedAndReset(t, workDir, before)
+	if got := store.issues["gt-mr-b"].Status; got != beadsdk.StatusClosed {
+		t.Fatalf("invalidated MR status = %s, want closed", got)
+	}
+	if got := store.issues["gt-mr-a"].Status; got != beadsdk.StatusOpen {
+		t.Fatalf("unaffected MR status = %s, want open", got)
+	}
+}
+
 func TestProcessBatch_RechecksMRCloseReasonBeforePush(t *testing.T) {
 	workDir, _, cleanup := testGitRepo(t)
 	defer cleanup()
