@@ -853,8 +853,8 @@ func TestBdSubprocessEnvUsesTownConfigBeforeMetadataExists(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("GT_DOLT_IGNORE_CONFIG", "")
-	t.Setenv("GT_DOLT_HOST", "")
-	t.Setenv("GT_DOLT_PORT", "")
+	t.Setenv("GT_DOLT_HOST", "stale-host")
+	t.Setenv("GT_DOLT_PORT", "9999")
 	t.Setenv("BEADS_DOLT_SERVER_HOST", "stale-host")
 	t.Setenv("BEADS_DOLT_SERVER_PORT", "9999")
 	t.Setenv("BEADS_DOLT_PORT", "9999")
@@ -869,6 +869,58 @@ func TestBdSubprocessEnvUsesTownConfigBeforeMetadataExists(t *testing.T) {
 	}
 	if got["BEADS_DOLT_SERVER_PORT"] != "5507" || got["BEADS_DOLT_PORT"] != "5507" {
 		t.Fatalf("ports = server:%q legacy:%q, want config port in %v", got["BEADS_DOLT_SERVER_PORT"], got["BEADS_DOLT_PORT"], env)
+	}
+}
+
+func TestBdSubprocessEnvClearsStaleHostWhenConfigHasNoHost(t *testing.T) {
+	townRoot := t.TempDir()
+	mayorDir := filepath.Join(townRoot, "mayor")
+	if err := os.MkdirAll(mayorDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayorDir, "town.json"), []byte(`{"name":"test-town"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	doltDataDir := filepath.Join(townRoot, ".dolt-data")
+	if err := os.MkdirAll(doltDataDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(doltDataDir, "config.yaml"), []byte("listener:\n  port: 5507\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	beadsDir := filepath.Join(townRoot, "rig", ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GT_DOLT_IGNORE_CONFIG", "")
+	t.Setenv("GT_DOLT_HOST", "stale-host")
+	t.Setenv("BEADS_DOLT_SERVER_HOST", "stale-host")
+	t.Setenv("GT_DOLT_PORT", "9999")
+
+	env := bdSubprocessEnv(beadsDir, "explicit_db")
+	got := rigEnvMap(env)
+	if _, ok := got["BEADS_DOLT_SERVER_HOST"]; ok {
+		t.Fatalf("BEADS_DOLT_SERVER_HOST leaked from config without host: %v", env)
+	}
+	if got["BEADS_DOLT_SERVER_PORT"] != "5507" || got["BEADS_DOLT_PORT"] != "5507" {
+		t.Fatalf("ports = server:%q legacy:%q, want config port in %v", got["BEADS_DOLT_SERVER_PORT"], got["BEADS_DOLT_PORT"], env)
+	}
+}
+
+func TestBdInitServerPortConfigBeatsStaleEnv(t *testing.T) {
+	townRoot := t.TempDir()
+	t.Setenv("GT_DOLT_IGNORE_CONFIG", "")
+	t.Setenv("GT_DOLT_PORT", "9999")
+	doltDataDir := filepath.Join(townRoot, ".dolt-data")
+	if err := os.MkdirAll(doltDataDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(doltDataDir, "config.yaml"), []byte("listener:\n  port: 5507\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := bdInitServerPort(townRoot); got != 5507 {
+		t.Fatalf("bdInitServerPort() = %d, want 5507", got)
 	}
 }
 

@@ -515,15 +515,27 @@ func stripDoltEndpointEnv(env []string) []string {
 	filtered := make([]string, 0, len(env))
 	for _, entry := range env {
 		key, _, ok := strings.Cut(entry, "=")
-		if ok {
-			switch key {
-			case "GT_DOLT_HOST", "GT_DOLT_PORT", "BEADS_DOLT_SERVER_HOST", "BEADS_DOLT_SERVER_PORT", "BEADS_DOLT_PORT":
-				continue
-			}
+		if ok && isDoltEndpointEnvKey(key) {
+			continue
 		}
 		filtered = append(filtered, entry)
 	}
 	return filtered
+}
+
+func isDoltEndpointEnvKey(key string) bool {
+	for _, want := range []string{"GT_DOLT_HOST", "GT_DOLT_PORT", "BEADS_DOLT_SERVER_HOST", "BEADS_DOLT_SERVER_PORT", "BEADS_DOLT_PORT"} {
+		if runtime.GOOS == "windows" {
+			if strings.EqualFold(key, want) {
+				return true
+			}
+			continue
+		}
+		if key == want {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveDoltPort(townRoot string) int {

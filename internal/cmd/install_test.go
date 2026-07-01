@@ -195,6 +195,44 @@ func TestWithBeadsDirEnvUsesTownConfigBeforeMetadataExists(t *testing.T) {
 	}
 }
 
+func TestWithBeadsDirEnvClearsStaleHostWhenConfigHasNoHost(t *testing.T) {
+	townRoot := t.TempDir()
+	beadsDir := filepath.Join(townRoot, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	mayorDir := filepath.Join(townRoot, "mayor")
+	if err := os.MkdirAll(mayorDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayorDir, "town.json"), []byte(`{"name":"test-town"}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	doltDataDir := filepath.Join(townRoot, ".dolt-data")
+	if err := os.MkdirAll(doltDataDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(doltDataDir, "config.yaml"), []byte("listener:\n  port: 5507\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GT_DOLT_IGNORE_CONFIG", "")
+	t.Setenv("GT_DOLT_HOST", "stale-host")
+	t.Setenv("BEADS_DOLT_SERVER_HOST", "stale-host")
+	t.Setenv("GT_DOLT_PORT", "9999")
+
+	env := withBeadsDirEnv(beadsDir)
+	got := installEnvMap(env)
+	if _, ok := got["GT_DOLT_HOST"]; ok {
+		t.Fatalf("GT_DOLT_HOST leaked from config without host: %v", env)
+	}
+	if _, ok := got["BEADS_DOLT_SERVER_HOST"]; ok {
+		t.Fatalf("BEADS_DOLT_SERVER_HOST leaked from config without host: %v", env)
+	}
+	if got["GT_DOLT_PORT"] != "5507" || got["BEADS_DOLT_SERVER_PORT"] != "5507" {
+		t.Fatalf("ports = GT:%q server:%q, want 5507 in %v", got["GT_DOLT_PORT"], got["BEADS_DOLT_SERVER_PORT"], env)
+	}
+}
+
 func installEnvMap(env []string) map[string]string {
 	out := make(map[string]string)
 	for _, entry := range env {

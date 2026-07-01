@@ -1438,6 +1438,88 @@ func TestResolveConfiguredDoltHost_FallsBackToEnv(t *testing.T) {
 	}
 }
 
+func TestResolveConfiguredDoltHost_ConfigYAMLWithoutHostDoesNotFallBackToEnv(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("GT_DOLT_IGNORE_CONFIG", "")
+	t.Setenv("GT_DOLT_HOST", "stale-host")
+	doltDataDir := filepath.Join(tmpDir, ".dolt-data")
+	if err := os.MkdirAll(doltDataDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(doltDataDir, "config.yaml"), []byte("listener:\n  port: 5507\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := ResolveConfiguredDoltHost(tmpDir); got != "" {
+		t.Errorf("ResolveConfiguredDoltHost() = %q, want empty host from managed config", got)
+	}
+}
+
+func TestNormalizeConfiguredDoltEnv_ConfigYAMLBeatsStaleEnv(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("GT_DOLT_IGNORE_CONFIG", "")
+	doltDataDir := filepath.Join(tmpDir, ".dolt-data")
+	if err := os.MkdirAll(doltDataDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(doltDataDir, "config.yaml"), []byte("listener:\n  host: 127.0.0.2\n  port: 5507\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	env := NormalizeConfiguredDoltEnv([]string{
+		"GT_DOLT_HOST=stale-host",
+		"GT_DOLT_PORT=9999",
+		"BEADS_DOLT_SERVER_HOST=stale-host",
+		"BEADS_DOLT_SERVER_PORT=9999",
+		"BEADS_DOLT_PORT=9999",
+		"KEEP=1",
+	}, tmpDir)
+	got := envSliceMap(env)
+	if got["GT_DOLT_HOST"] != "127.0.0.2" || got["GT_DOLT_PORT"] != "5507" {
+		t.Fatalf("GT endpoint = %q:%q, want config endpoint in %v", got["GT_DOLT_HOST"], got["GT_DOLT_PORT"], env)
+	}
+	for _, key := range []string{"BEADS_DOLT_SERVER_HOST", "BEADS_DOLT_SERVER_PORT", "BEADS_DOLT_PORT"} {
+		if value, ok := got[key]; ok {
+			t.Fatalf("%s leaked as %q in %v", key, value, env)
+		}
+	}
+	if got["KEEP"] != "1" {
+		t.Fatalf("KEEP missing from %v", env)
+	}
+}
+
+func TestNormalizeConfiguredDoltEnv_ConfigYAMLWithoutHostClearsStaleHost(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("GT_DOLT_IGNORE_CONFIG", "")
+	doltDataDir := filepath.Join(tmpDir, ".dolt-data")
+	if err := os.MkdirAll(doltDataDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(doltDataDir, "config.yaml"), []byte("listener:\n  port: 5507\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	env := NormalizeConfiguredDoltEnv([]string{"GT_DOLT_HOST=stale-host", "GT_DOLT_PORT=9999"}, tmpDir)
+	got := envSliceMap(env)
+	if _, ok := got["GT_DOLT_HOST"]; ok {
+		t.Fatalf("GT_DOLT_HOST leaked from config without host: %v", env)
+	}
+	if got["GT_DOLT_PORT"] != "5507" {
+		t.Fatalf("GT_DOLT_PORT = %q, want 5507 in %v", got["GT_DOLT_PORT"], env)
+	}
+}
+
+func envSliceMap(env []string) map[string]string {
+	out := make(map[string]string)
+	for _, entry := range env {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok {
+			out[key] = value
+		}
+	}
+	return out
+}
+
 func TestAgentEnv_InjectsDoltPort(t *testing.T) {
 	t.Setenv("GT_DOLT_IGNORE_CONFIG", "")
 	t.Setenv("GT_DOLT_HOST", "")
