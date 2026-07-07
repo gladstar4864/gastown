@@ -1034,7 +1034,11 @@ func slotOpenDecision(workDir, townRoot, rigName, polecatName, exitType string) 
 	var targetRefs []string
 	if branch, err := g.CurrentBranch(); err == nil {
 		input.Branch = branch
-		targetRefs = witnessRecoveryTargetRefs(bd, fields, branch)
+		var targetRefLookupFailed bool
+		targetRefs, targetRefLookupFailed = witnessRecoveryTargetRefs(bd, fields, branch)
+		if targetRefLookupFailed {
+			input.MQLookupFailed = true
+		}
 		if status, err := g.CheckUncommittedWork(); err == nil {
 			input.GitDirty = !status.CleanExcludingRuntime()
 			input.StashCount = status.StashCount
@@ -1085,16 +1089,19 @@ func slotOpenDecision(workDir, townRoot, rigName, polecatName, exitType string) 
 	return polecat.DecideSlotReuse(input)
 }
 
-func witnessRecoveryTargetRefs(bd *beads.Beads, fields *beads.AgentFields, branch string) []string {
+func witnessRecoveryTargetRefs(bd *beads.Beads, fields *beads.AgentFields, branch string) ([]string, bool) {
 	if fields == nil || bd == nil {
-		return nil
+		return nil, false
 	}
 	var refs []string
+	lookupFailed := false
 	if fields.ActiveMR != "" {
 		if issue, err := bd.Show(fields.ActiveMR); err == nil {
 			if mrFields := beads.ParseMRFields(issue); mrFields != nil && mrFields.Target != "" {
 				refs = append(refs, mrFields.Target)
 			}
+		} else {
+			lookupFailed = true
 		}
 	}
 	if branch != "" {
@@ -1102,19 +1109,25 @@ func witnessRecoveryTargetRefs(bd *beads.Beads, fields *beads.AgentFields, branc
 			if mrFields := beads.ParseMRFields(issue); mrFields != nil && mrFields.Target != "" {
 				refs = append(refs, mrFields.Target)
 			}
+		} else {
+			lookupFailed = true
 		}
 	}
 	if fields.LastSourceIssue != "" && fields.LastSourceIssue != fields.HookBead {
 		if issue, err := bd.Show(fields.LastSourceIssue); err == nil {
 			refs = append(refs, witnessAttachmentTargetRefs(bd, issue)...)
+		} else {
+			lookupFailed = true
 		}
 	}
 	if fields.HookBead != "" {
 		if issue, err := bd.Show(fields.HookBead); err == nil {
 			refs = append(refs, witnessAttachmentTargetRefs(bd, issue)...)
+		} else {
+			lookupFailed = true
 		}
 	}
-	return witnessUniqueRefs(refs)
+	return witnessUniqueRefs(refs), lookupFailed
 }
 
 func witnessAttachmentTargetRefs(bd *beads.Beads, issue *beads.Issue) []string {

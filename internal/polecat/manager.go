@@ -2212,7 +2212,10 @@ func (m *Manager) workstateInputForPolecat(name string, state State, issue strin
 	} else {
 		input.Branch = branch
 	}
-	targetRefs := m.reuseTargetRefs(fields, branch)
+	targetRefs, targetRefLookupFailed := m.reuseTargetRefs(fields, branch)
+	if targetRefLookupFailed {
+		input.MQLookupFailed = true
+	}
 	if status, err := g.CheckUncommittedWork(); err == nil {
 		input.GitDirty = !status.CleanExcludingRuntime()
 		input.StashCount = status.StashCount
@@ -2309,16 +2312,19 @@ func hasSubmittableWorkForWorkstate(worktreePath string, targetRefs []string) bo
 	return err == nil && status.UnpreservedPatchCount > 0
 }
 
-func (m *Manager) reuseTargetRefs(fields *beads.AgentFields, branch string) []string {
+func (m *Manager) reuseTargetRefs(fields *beads.AgentFields, branch string) ([]string, bool) {
 	if fields == nil {
-		return nil
+		return nil, false
 	}
 	var refs []string
+	lookupFailed := false
 	if fields.ActiveMR != "" {
 		if issue, err := m.beads.Show(fields.ActiveMR); err == nil {
 			if mrFields := beads.ParseMRFields(issue); mrFields != nil && mrFields.Target != "" {
 				refs = append(refs, mrFields.Target)
 			}
+		} else {
+			lookupFailed = true
 		}
 	}
 	if branch != "" {
@@ -2326,19 +2332,25 @@ func (m *Manager) reuseTargetRefs(fields *beads.AgentFields, branch string) []st
 			if mrFields := beads.ParseMRFields(issue); mrFields != nil && mrFields.Target != "" {
 				refs = append(refs, mrFields.Target)
 			}
+		} else {
+			lookupFailed = true
 		}
 	}
 	if fields.LastSourceIssue != "" && fields.LastSourceIssue != fields.HookBead {
 		if issue, err := m.beads.Show(fields.LastSourceIssue); err == nil {
 			refs = append(refs, attachmentTargetRefs(m.beads, issue)...)
+		} else {
+			lookupFailed = true
 		}
 	}
 	if fields.HookBead != "" {
 		if issue, err := m.beads.Show(fields.HookBead); err == nil {
 			refs = append(refs, attachmentTargetRefs(m.beads, issue)...)
+		} else {
+			lookupFailed = true
 		}
 	}
-	return uniqueRefs(refs)
+	return uniqueRefs(refs), lookupFailed
 }
 
 func attachmentTargetRefs(bd *beads.Beads, issue *beads.Issue) []string {
