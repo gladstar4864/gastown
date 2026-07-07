@@ -296,11 +296,58 @@ type IssueDep struct {
 	CloseReason    string `json:"close_reason,omitempty"`
 }
 
+// UnmarshalJSON accepts both bd dependency relation field names. Some lower-level
+// dependency output uses "type" for the relation, while issue details also have
+// an issue_type field that must remain distinct.
+func (d *IssueDep) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		ID             string `json:"id"`
+		Title          string `json:"title"`
+		Status         string `json:"status"`
+		Priority       int    `json:"priority"`
+		Type           string `json:"issue_type"`
+		DependencyType string `json:"dependency_type,omitempty"`
+		RelationType   string `json:"type"`
+		CloseReason    string `json:"close_reason,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	d.ID = raw.ID
+	d.Title = raw.Title
+	d.Status = raw.Status
+	d.Priority = raw.Priority
+	d.Type = raw.Type
+	d.DependencyType = raw.DependencyType
+	d.CloseReason = raw.CloseReason
+	if strings.TrimSpace(d.DependencyType) == "" {
+		d.DependencyType = knownDependencyRelation(raw.RelationType)
+	}
+	return nil
+}
+
 var blockingDependencyTypes = map[string]bool{
 	"blocks":             true,
 	"conditional-blocks": true,
 	"waits-for":          true,
 	"merge-blocks":       true,
+}
+
+var nonblockingDependencyTypes = map[string]bool{
+	"tracks":          true,
+	"parent-child":    true,
+	"related":         true,
+	"discovered-from": true,
+	"thread":          true,
+}
+
+func knownDependencyRelation(depType string) string {
+	depType = strings.ToLower(strings.TrimSpace(depType))
+	if blockingDependencyTypes[depType] || nonblockingDependencyTypes[depType] {
+		return depType
+	}
+	return ""
 }
 
 // HasUnresolvedBlockers reports whether an issue has any unresolved blocking
